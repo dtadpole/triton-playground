@@ -5,7 +5,7 @@ import triton.language as tl
 import matplotlib
 import pandas as pd
 import numpy as np
-
+from typing import Tuple
 # We can fuse `leaky_relu` by providing it as an `ACTIVATION` meta-parameter in `_matmul`.
 @triton.jit
 def leaky_relu(x):
@@ -202,6 +202,10 @@ def mlp_torch_fwd(x, w1, w2, activation=""):
     z = torch.bmm(x, w1)
     if activation == "leaky_relu":
         z = torch.nn.functional.leaky_relu(z)
+    elif activation == "silu":
+        z = torch.nn.functional.silu(z)
+    elif activation == "sigmoid":
+        z = torch.sigmoid(z)
     o = torch.bmm(z, w2)
     return o
 
@@ -563,7 +567,7 @@ def mlp_wide_triton_bwd2(x, w1, w2, o, do, activation=""):
     return dx.view(H, B, D), dw1.view(H, D, E), dw2.view(H, E, D)
 
 
-def mlp_torch_bwd2(x, w1, w2, o, do, activation=""):
+def mlp_torch_bwd2(x, w1, w2, o, do, activation="") -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if activation == "leaky_relu":
         y_ref = torch.nn.functional.leaky_relu(x @ w1, negative_slope=0.01) @ w2
     elif activation == "silu":
@@ -587,8 +591,12 @@ def unit_test_fwd():
     x = torch.randn((H, B, D), device='cuda', dtype=dtype) / np.sqrt(D)
     w1 = torch.randn((H, D, E), device='cuda', dtype=dtype) / np.sqrt(E)
     w2 = torch.randn((H, E, D), device='cuda', dtype=dtype) / np.sqrt(D)
-    triton_output = mlp_wide_triton_fwd(x, w1, w2, activation="leaky_relu")
-    torch_output = mlp_torch_fwd(x, w1, w2, activation="leaky_relu")
+
+    activation = "silu"
+
+    triton_output = mlp_wide_triton_fwd(x, w1, w2, activation=activation)
+    torch_output = mlp_torch_fwd(x, w1, w2, activation=activation)
+
     print(f"triton_output={triton_output.shape, triton_output}")
     print(f"torch_output={torch_output.shape, torch_output}")
     if torch.allclose(triton_output, torch_output, atol=1e-2, rtol=1e-2):
@@ -599,7 +607,6 @@ def unit_test_fwd():
     diff = np.abs(triton_output.to(torch.float32).cpu().numpy() - torch_output.to(torch.float32).cpu().numpy())
     print("max diff:",np.max(diff))
     print("mean diff:",np.mean(diff))
-
 
 
 def unit_test_bwd2():
