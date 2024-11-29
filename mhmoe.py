@@ -208,6 +208,7 @@ def mlp_torch_fwd(x, w1, w2, activation=""):
 
 @triton.jit
 def _mlp_wide_kernel_bwd_dx(
+    dx,
     pid_h, pid_b,
     x_ptr, w1_ptr, w2_ptr, o_ptr, dx_ptr, dw1_ptr, dw2_ptr, do_ptr,
     H, B, D: tl.constexpr, E,
@@ -257,7 +258,6 @@ def _mlp_wide_kernel_bwd_dx(
 
     x = tl.load(x_ptrs, mask=x_mask, other=0.0) # BLOCK_SIZE_B, D
     do = tl.load(do_ptrs, mask=do_mask, other=0.0) # BLOCK_SIZE_B, D
-    dx = tl.zeros((BLOCK_SIZE_B, D), dtype=tl.float32)  # BLOCK_SIZE_B, D
 
     for e in range(0, tl.cdiv(E, BLOCK_SIZE_E)):
 
@@ -300,6 +300,7 @@ def _mlp_wide_kernel_bwd_dx(
 
 @triton.jit
 def _mlp_wide_kernel_bwd_dw1w2(
+    dw1, dw2,
     pid_h, pid_e,
     x_ptr, w1_ptr, w2_ptr, o_ptr, dx_ptr, dw1_ptr, dw2_ptr, do_ptr,
     H, B, D: tl.constexpr, E,
@@ -349,8 +350,6 @@ def _mlp_wide_kernel_bwd_dw1w2(
     w2 = tl.load(w2_ptrs, mask=w2_mask, other=0.0)                      # BLOCK_SIZE_E, D
     do = tl.load(do_ptrs, mask=do_mask, other=0.0)                      # BLOCK_SIZE_B, D
 
-    dw1 = tl.zeros((D, BLOCK_SIZE_E), dtype=tl.float32)                 # D, BLOCK_SIZE_E
-    dw2 = tl.zeros((BLOCK_SIZE_E, D), dtype=tl.float32)                 # BLOCK_SIZE_E, D
     for b in range(0, tl.cdiv(B, BLOCK_SIZE_B)):
 
         x_mask = (offs_b[:, None] < B - b * BLOCK_SIZE_B) & (offs_d[None, :] < D)
@@ -461,6 +460,7 @@ def mlp_wide_kernel_bwd2(
 
         dx = tl.zeros((BLOCK_SIZE_B, D), dtype=tl.float32)  # BLOCK_SIZE_B, D
         dx = _mlp_wide_kernel_bwd_dx(
+            dx,
             pid_h, pid_b,
             x_ptr, w1_ptr, w2_ptr, o_ptr, dx_ptr, dw1_ptr, dw2_ptr, do_ptr,
             H, B, D, E,
@@ -487,7 +487,11 @@ def mlp_wide_kernel_bwd2(
         dw2_ptrs = dw2_ptr + ((pid_h * E + pid_e * BLOCK_SIZE_E + offs_e[:, None]) * stride_dw2e + offs_d[None, :] * stride_dw2d)
         dw2_mask = (offs_e[:, None] < E - pid_e * BLOCK_SIZE_E) & (offs_d[None, :] < D)
 
+        dw1 = tl.zeros((D, BLOCK_SIZE_E), dtype=tl.float32)                 # D, BLOCK_SIZE_E
+        dw2 = tl.zeros((BLOCK_SIZE_E, D), dtype=tl.float32)                 # BLOCK_SIZE_E, D
+
         dw1, dw2 = _mlp_wide_kernel_bwd_dw1w2(
+            dw1, dw2,
             pid_h, pid_e,
             x_ptr, w1_ptr, w2_ptr, o_ptr, dx_ptr, dw1_ptr, dw2_ptr, do_ptr,
             H, B, D, E,
