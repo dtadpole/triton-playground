@@ -20,9 +20,9 @@ def silu(x):
     return x * tl.sigmoid(x)
 
 @triton.jit
-def d_silu(x):
+def d_silu(x, o):
     sig = tl.sigmoid(x)
-    return sig + x * sig * (1 - sig)
+    return sig + o * (1 - sig)
 
 @torch.jit.script
 def torch_silu_derivative(x):
@@ -30,9 +30,9 @@ def torch_silu_derivative(x):
     return sig + x * sig * (1 - sig)
 
 @triton.jit
-def d_sigmoid(x):
-    sig = tl.sigmoid(x)
-    return sig * (1 - sig)
+def d_sigmoid(o):
+    # sig = tl.sigmoid(x)
+    return o * (1 - o)
 
 @torch.jit.script
 def torch_sigmoid_derivative(x):
@@ -287,9 +287,9 @@ def _mlp_wide_kernel_bwd_dx(
         if ACTIVATION == "leaky_relu":
             dz = (dh * d_leacky_relu(z)).to(TARGET_TYPE)   # BLOCK_SIZE_B, BLOCK_SIZE_E
         elif ACTIVATION == "silu":
-            dz = (dh * d_silu(z)).to(TARGET_TYPE)
+            dz = (dh * d_silu(z, h)).to(TARGET_TYPE)
         elif ACTIVATION == "sigmoid":
-            dz = (dh * d_sigmoid(z)).to(TARGET_TYPE)
+            dz = (dh * d_sigmoid(h)).to(TARGET_TYPE)
         else:
             dz = dh.to(TARGET_TYPE)
 
@@ -381,9 +381,9 @@ def _mlp_wide_kernel_bwd_dw1w2(
         if ACTIVATION == "leaky_relu":
             dz = (dh * d_leacky_relu(z)).to(TARGET_TYPE)   # BLOCK_SIZE_B, BLOCK_SIZE_E
         elif ACTIVATION == "silu":
-            dz = (dh * d_silu(z)).to(TARGET_TYPE)
+            dz = (dh * d_silu(z, h)).to(TARGET_TYPE)
         elif ACTIVATION == "sigmoid":
-            dz = (dh * d_sigmoid(z)).to(TARGET_TYPE)
+            dz = (dh * d_sigmoid(h)).to(TARGET_TYPE)
         else:
             dz = dh.to(TARGET_TYPE)
 
