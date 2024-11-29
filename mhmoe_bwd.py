@@ -99,6 +99,7 @@ def _mlp_wide_kernel_bwd_dx(
 
     return dx
 
+
 @triton.jit
 def _mlp_wide_kernel_bwd_dw1w2(
     pid_h, pid_e,
@@ -181,7 +182,7 @@ def _mlp_wide_kernel_bwd_dw1w2(
 
         x_ptrs += BLOCK_SIZE_B * stride_xb
         do_ptrs += BLOCK_SIZE_B * stride_dob
-
+        
     return dw1, dw2
 
 @triton.autotune(
